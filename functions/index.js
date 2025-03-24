@@ -1,19 +1,33 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
-
-const {onRequest} = require("firebase-functions/v2/https");
+const {onObjectFinalized} = require("firebase-functions/v2/storage");
 const logger = require("firebase-functions/logger");
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
+exports.onFileUploaded = onObjectFinalized({
+  bucket: "test-58b15.firebasestorage.app",
+  eventType: "google.storage.object.finalize",
+  timeoutSeconds: 300, // 5 minutes (300 seconds)
+}, async (event) => {
+  try {
+    logger.info("Function onFileUploaded triggered successfully!");
 
-// exports.helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+    // Check if it's an audio file
+    const contentType = event.data.contentType;
+    if (!contentType.startsWith("audio/")) {
+      logger.info("Not an audio file, skipping processing");
+      return;
+    }
+
+    const filePath = event.data.name;
+    const fileSize = event.data.size;
+
+    logger.info("Audio file uploaded:", {
+      path: filePath,
+      type: contentType,
+      size: fileSize,
+    });
+
+    // Add your audio processing logic here
+  } catch (error) {
+    logger.error("Error processing audio file:", error);
+    throw error;
+  }
+});
