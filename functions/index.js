@@ -65,15 +65,7 @@ exports.onFileUploaded = onObjectFinalized({
       downloadURL: downloadURL,
     });
 
-    // Create a document in Firestore to track processing
-    const processingDoc = await processingCollection.add({
-      filePath,
-      status: "processing",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      downloadURL,
-    });
-
-    // Call RunPod API with webhook
+    // Call RunPod API first to get the job ID
     const response = await fetch(`${RUNPOD_ENDPOINT}/run`, {
       method: "POST",
       headers: {
@@ -97,8 +89,12 @@ exports.onFileUploaded = onObjectFinalized({
 
     const result = await response.json();
 
-    // Update Firestore with RunPod job ID
-    await processingDoc.update({
+    // Then create document with all initial data including RunPod job ID
+    await processingCollection.add({
+      filePath,
+      status: "processing",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      downloadURL,
       runpodJobId: result.id,
     });
 
@@ -163,6 +159,21 @@ Dont give speaker number and timestamp in action items.
 If you are not sure about the speaker name, give it as "Unknown". 
 If its multi person task, give their names or if its team task, mention team task.
               Start the action items list with "### Action Items:"
+
+              Also, please give the meeting a name based on the transcript. Make it short and concise.
+              Start the meeting name with "### Meeting Name:"
+              Example: "### Meeting Name: 🤝 Integrating Salesforce and Adobe"
+              Please dont forget to add an emoji to the meeting name. It should be relevant to the meeting.
+
+              Also, please read the transcript and give me a number of people who spoke in the meeting.
+              Speakers information is in the transcript will start from speaker_00 and so on.
+              Start the number of people with "### Number of People:"
+              Example: "### Number of People: 5 👥". This is just hardcoded example. Please give the actual number of people who spoke in the meeting.
+
+              Please give me one line summary of the meeting. Only one line.
+              Start the short summary with "### Short Summary:"
+              Example: "### Short Summary: Team discussed integration plans for Salesforce and Adobe systems"
+              Short summary should strictly be one liner and should be relevant to the meeting.
             `,
           }],
         }],
@@ -190,19 +201,46 @@ If its multi person task, give their names or if its team task, mention team tas
 
     const fullText = result.candidates[0].content.parts[0].text;
 
-    // Split response using the action items marker
-    let [summary, actionItems] = fullText.split("### Action Items:");
+    // Split all sections using markers
+    const sections = {
+      summary: "",
+      actionItems: "",
+      meetingName: "",
+      numberOfPeople: "",
+      shortSummary: "",
+    };
 
-    // If no split marker found, assume everything is summary
-    if (!actionItems) {
-      actionItems = "";
+    // Extract each section using markers
+    if (fullText.includes("### Action Items:")) {
+      [sections.summary, sections.actionItems] = fullText.split("### Action Items:");
     }
 
-    logger.info("Successfully processed Gemini response");
+    // Extract meeting name
+    const meetingNameMatch = fullText.match(/### Meeting Name:(.*?)(?=###|$)/s);
+    if (meetingNameMatch) {
+      sections.meetingName = meetingNameMatch[1].trim();
+    }
+
+    // Extract number of people
+    const numberOfPeopleMatch = fullText.match(/### Number of People:(.*?)(?=###|$)/s);
+    if (numberOfPeopleMatch) {
+      sections.numberOfPeople = numberOfPeopleMatch[1].trim();
+    }
+
+    // Extract short summary
+    const shortSummaryMatch = fullText.match(/### Short Summary:(.*?)(?=###|$)/s);
+    if (shortSummaryMatch) {
+      sections.shortSummary = shortSummaryMatch[1].trim();
+    }
+
+    logger.info("Successfully processed Gemini response and split sections");
 
     return {
-      summary: summary.trim(),
-      actionItems: actionItems.trim(),
+      summary: sections.summary.trim(),
+      actionItems: sections.actionItems.trim(),
+      meetingName: sections.meetingName,
+      numberOfPeople: sections.numberOfPeople,
+      shortSummary: sections.shortSummary,
     };
   } catch (error) {
     logger.error("Gemini processing error:", {
@@ -213,6 +251,9 @@ If its multi person task, give their names or if its team task, mention team tas
     return {
       summary: "Error processing transcript",
       actionItems: "Error processing action items",
+      meetingName: "Error processing meeting name",
+      numberOfPeople: "Error processing number of people",
+      shortSummary: "Error processing short summary",
       error: error.message,
     };
   } finally {
@@ -295,6 +336,9 @@ exports.runpodWebhook = onRequest({
         actionItems: geminiResults.actionItems,
         completedAt: admin.firestore.FieldValue.serverTimestamp(),
         error: geminiResults.error || null,
+        meetingName: geminiResults.meetingName,
+        numberOfPeople: geminiResults.numberOfPeople,
+        shortSummary: geminiResults.shortSummary,
       });
     }
 
