@@ -1,9 +1,8 @@
-const {onObjectFinalized} = require("firebase-functions/v2/storage");
 const {onRequest} = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
-const {getStorage} = require("firebase-admin/storage");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
+const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -27,43 +26,15 @@ const formatTime = (seconds) => {
   ${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 };
 
-// Function triggered when file is uploaded
-exports.onFileUploaded = onObjectFinalized({
-  bucket: "test-58b15.firebasestorage.app",
-  eventType: "google.storage.object.finalize",
-  timeoutSeconds: 300, // 5 minutes (300 seconds)
-}, async (event) => {
+// Replace onFileUploaded with onDocumentCreated
+exports.onDocumentCreated = onDocumentCreated("audioProcessing/{docId}", async (event) => {
+  const snap = event.data;
   const startTime = Date.now();
   logger.info("Function started at:", new Date(startTime).toISOString());
 
   try {
-    logger.info("Function onFileUploaded triggered successfully!");
-
-    // Check if it's an audio file
-    const contentType = event.data.contentType;
-    if (!contentType.startsWith("audio/")) {
-      logger.info("Not an audio file, skipping processing");
-      return;
-    }
-
-    const filePath = event.data.name;
-    const fileSize = event.data.size;
-
-    // Get download URL
-    const storage = getStorage();
-    const bucket = storage.bucket(event.data.bucket);
-    const file = bucket.file(filePath);
-    const [downloadURL] = await file.getSignedUrl({
-      action: "read",
-      expires: Date.now() + 1000 * 60 * 60, // 1 hour
-    });
-
-    logger.info("Audio file uploaded:", {
-      path: filePath,
-      type: contentType,
-      size: fileSize,
-      downloadURL: downloadURL,
-    });
+    const docData = snap.data();
+    logger.info("New document created:", docData);
 
     // Call RunPod API first to get the job ID
     const response = await fetch(`${RUNPOD_ENDPOINT}/run`, {
@@ -74,10 +45,10 @@ exports.onFileUploaded = onObjectFinalized({
       },
       body: JSON.stringify({
         input: {
-          audio_file: downloadURL,
+          audio_file: docData.downloadableUrl, // Use downloadableUrl from Firestore
           language: "en",
-          initial_prompt: "",
-          batch_size: 32,
+          initial_prompt: docData.context || "", // Use context from Firestore
+          batch_size: 64,
           diarization: true,
           align_output: true,
           huggingface_access_token: "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",
@@ -89,22 +60,28 @@ exports.onFileUploaded = onObjectFinalized({
 
     const result = await response.json();
 
-    // Then create document with all initial data including RunPod job ID
-    await processingCollection.add({
-      filePath,
+    // Update the existing document with RunPod job ID and status
+    await snap.ref.update({
       status: "processing",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      downloadURL,
       runpodJobId: result.id,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     logger.info("RunPod job submitted:", result);
   } catch (error) {
-    logger.error("Error processing audio file:", error);
+    logger.error("Error processing document:", error);
+
+    // Update document with error status
+    await snap.ref.update({
+      status: "error",
+      error: error.message,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
     throw error;
   } finally {
     const endTime = Date.now();
-    const duration = (endTime - startTime) / 1000; // Convert to seconds
+    const duration = (endTime - startTime) / 1000;
     logger.info("Function completed:", {
       startTime: new Date(startTime).toISOString(),
       endTime: new Date(endTime).toISOString(),
@@ -267,9 +244,9 @@ If its multi person task, give their names or if its team task, mention team tas
   }
 };
 
-// Modify the webhook handler
+// Update the webhook handler to use the same document
 exports.runpodWebhook = onRequest({
-  cors: true, // Enable CORS for RunPod
+  cors: true,
   maxInstances: 10,
 }, async (req, res) => {
   const startTime = Date.now();
@@ -321,7 +298,7 @@ exports.runpodWebhook = onRequest({
     // Process with Gemini
     const geminiResults = await processWithGemini(formattedTranscript);
 
-    // Update Firestore with formatted transcript but without raw transcript
+    // Update the same document with results
     const querySnapshot = await processingCollection
         .where("runpodJobId", "==", webhookData.id)
         .limit(1)
@@ -339,6 +316,7 @@ exports.runpodWebhook = onRequest({
         meetingName: geminiResults.meetingName,
         numberOfPeople: geminiResults.numberOfPeople,
         shortSummary: geminiResults.shortSummary,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
 
