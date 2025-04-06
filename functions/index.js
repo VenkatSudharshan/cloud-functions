@@ -36,26 +36,37 @@ exports.onDocumentCreated = onDocumentCreated("audioProcessing/{docId}", async (
     const docData = snap.data();
     logger.info("New document created:", docData);
 
-    // Call RunPod API first to get the job ID
+    // In the onDocumentCreated function, before the RunPod API call
+    const runpodPayload = {
+      input: {
+        audio_file: docData.downloadableUrl,
+        language: "en",
+        initial_prompt: docData.context || "",
+        batch_size: 32,
+        diarization: true,
+        align_output: true,
+        huggingface_access_token: "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",
+      },
+      webhook: "https://us-central1-test-58b15.cloudfunctions.net/runpodWebhook",
+      webhook_events: ["completed", "failed"],
+    };
+
+    logger.info("RunPod API request payload:", {
+      endpoint: RUNPOD_ENDPOINT,
+      payload: runpodPayload,
+      documentData: {
+        downloadableUrl: docData.downloadableUrl,
+        context: docData.context,
+      },
+    });
+
     const response = await fetch(`${RUNPOD_ENDPOINT}/run`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${RUNPOD_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        input: {
-          audio_file: docData.downloadableUrl, // Use downloadableUrl from Firestore
-          language: "en",
-          initial_prompt: docData.context || "", // Use context from Firestore
-          batch_size: 64,
-          diarization: true,
-          align_output: true,
-          huggingface_access_token: "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",
-        },
-        webhook: "https://us-central1-test-58b15.cloudfunctions.net/runpodWebhook",
-        webhook_events: ["completed", "failed"],
-      }),
+      body: JSON.stringify(runpodPayload),
     });
 
     const result = await response.json();
@@ -91,12 +102,78 @@ exports.onDocumentCreated = onDocumentCreated("audioProcessing/{docId}", async (
 });
 
 // Add this helper function to process text with Gemini
-const processWithGemini = async (transcript) => {
+const processWithGemini = async (transcript, context = "") => {
   const startTime = Date.now();
   logger.info("Gemini processing started at:", new Date(startTime).toISOString());
 
   try {
     logger.info("Sending request to Gemini API v1");
+
+    // In the processWithGemini function, before the Gemini API call
+    const geminiPrompt = `
+      You are an AI Business Analyst assistant.
+
+      Use the **context information** below to enhance your understanding of the transcript:
+
+      Context/keywords:
+      ${context}
+
+      Transcript:
+      ${transcript}
+
+      Please perform the following tasks in order Use strict formatting as specified:
+
+---
+
+### 📌 Meeting Summary:
+• Provide a clear, structured, professional summary.
+• Focus on key discussion points, decisions made, and stakeholder contributions.
+• DO NOT use "Speaker_00", "Speaker_01", etc. Deduce names if possible; if not, omit the name.
+• Maintain a neutral, business-oriented tone. Do NOT hallucinate or assume.
+• Keep it concise but comprehensive.
+• Please do not hallucinate or assume any points. 
+---
+
+### ✅ Action Items:
+• Format as bullet points.
+• Use this structure: Name (if known): Action Item 🔧📅📝 (use relevant emoji)
+• If assigned to a group, label as "Team Task".
+• If name not known, use "Unknown".
+• Example:
+  - John: Schedule follow-up meeting with client 📅
+  - Team Task: Review current sprint backlog 🧾
+• Please do not hallucinate or assume any action item or assigned person name. 
+• Give as much as accurate action items as possible.
+---
+
+### 🏷️ Meeting Name:
+• Generate a short, clear title summarizing the theme of the meeting.
+• Add a relevant emoji.
+• Example: "🔄 Quarterly Planning Sync"
+
+---
+
+### 👥 Number of People:
+• Count number of unique speakers in the transcript (e.g., Speaker_00, Speaker_01, ...).
+• Format like this: "5"
+
+---
+
+### 🧾 Short Summary:
+• Provide a **one-line summary** of the meeting.
+• Be concise, direct, and meaningful.
+• Example: "Team reviewed progress on the product launch and aligned on next sprint goals."
+
+---
+
+Only include exactly what is asked in the structure above. Do NOT add extra commentary, headers, or notes.`; // rest of your prompt
+
+    logger.info("Gemini API request details:", {
+      endpoint: GEMINI_URL,
+      contextLength: context?.length || 0,
+      transcriptLength: transcript?.length || 0,
+      fullPrompt: geminiPrompt,
+    });
 
     const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
       method: "POST",
@@ -106,52 +183,7 @@ const processWithGemini = async (transcript) => {
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `
-              First Task - Meeting Summary:
-              ${transcript}
-              
-              Please provide a detailed summary of the following transcript. Assume you are professional Business Analyst.
-Summarize meeting transcript in a structured, professional format.  
-The summary should be clear, concise, and formatted for stakeholders
-Include key points, decisions, and main topics discussed. 
-Consider the different speakers' contributions and the provided keywords for context.Consider who (which speaker) mentioned or was assigned each action item. 
-Maintain a business-oriented, factual tone—no hallucination or assumptions.
-Use the provided keywords for additional context. Dont give speaker_01 or speaker number back in summary
-Try to deduce the speaker name from the transcript and use it in the summary once you are confident about it.
-Im only passing in speaker numbers for better context dont give them back in summary. Please give names only.
-
-              Second Task - Action Items List:
-              You are an **AI-powered Business Analyst** extracting action items from a meeting transcript in a structured, professional format.  
-The action items should be clear, assigned where possible, and formatted for easy tracking.
-
-Please extract all action items from this transcript and format them as bullet points with relevant emojis. Consider who (which speaker) mentioned or was assigned each action item. Use the provided keywords for additional context. Dont give speaker_01 or speaker number back in action ietms
-Try to deduce the speaker name from the transcript and use it in the action items once you are confident about it.
-im only passing in speaker numbers for better context dont give them back in action items. Please give names only.
-
-
-I want action items to be in format
-Speaker Name: Action Item
-
-Dont give speaker number and timestamp in action items. 
-If you are not sure about the speaker name, give it as "Unknown". 
-If its multi person task, give their names or if its team task, mention team task.
-              Start the action items list with "### Action Items:"
-
-              Also, please give the meeting a name based on the transcript. Make it short and concise.
-              Start the meeting name with "### Meeting Name:"
-              Example: "### Meeting Name: 🤝 Integrating Salesforce and Adobe"
-              Please dont forget to add an emoji to the meeting name. It should be relevant to the meeting.
-
-              Also, please read the transcript and give me a number of people who spoke in the meeting.
-              Speakers information is in the transcript will start from speaker_00 and so on.
-              Start the number of people with "### Number of People:"
-              Example: "### Number of People: 5 👥". This is just hardcoded example. Please give the actual number of people who spoke in the meeting.
-
-              Please give me one line summary of the meeting. Only one line.
-              Start the short summary with "### Short Summary:"
-              Example: "### Short Summary: Team discussed integration plans for Salesforce and Adobe systems"
-              Short summary should strictly be one liner and should be relevant to the meeting.
-            `,
+            text: geminiPrompt,
           }],
         }],
       }),
@@ -170,6 +202,12 @@ If its multi person task, give their names or if its team task, mention team tas
     const result = await response.json();
     logger.info("Received response from Gemini API v1");
 
+    // Log the raw response
+    logger.info("Raw Gemini response:", {
+      fullResponse: result,
+      rawText: result?.candidates?.[0]?.content?.parts?.[0]?.text || "No text found",
+    });
+
     // Validate response structure
     if (!result?.candidates?.[0]?.content?.parts?.[0]?.text) {
       logger.error("Invalid Gemini response structure:", result);
@@ -177,6 +215,11 @@ If its multi person task, give their names or if its team task, mention team tas
     }
 
     const fullText = result.candidates[0].content.parts[0].text;
+
+    // Log the extracted text before parsing sections
+    logger.info("Extracted full text before parsing sections:", {
+      fullText: fullText,
+    });
 
     // Split all sections using markers
     const sections = {
@@ -187,28 +230,41 @@ If its multi person task, give their names or if its team task, mention team tas
       shortSummary: "",
     };
 
-    // Extract each section using markers
-    if (fullText.includes("### Action Items:")) {
-      [sections.summary, sections.actionItems] = fullText.split("### Action Items:");
+    // Extract each section using the emoji markers
+    // Extract Meeting Summary
+    const summaryMatch = fullText.match(/### 📌 Meeting Summary:(.*?)(?=###|$)/s);
+    if (summaryMatch) {
+      sections.summary = summaryMatch[1].trim();
     }
 
-    // Extract meeting name
-    const meetingNameMatch = fullText.match(/### Meeting Name:(.*?)(?=###|$)/s);
+    // Extract Action Items
+    const actionItemsMatch = fullText.match(/### ✅ Action Items:(.*?)(?=###|$)/s);
+    if (actionItemsMatch) {
+      sections.actionItems = actionItemsMatch[1].trim();
+    }
+
+    // Extract Meeting Name
+    const meetingNameMatch = fullText.match(/### 🏷️ Meeting Name:(.*?)(?=###|$)/s);
     if (meetingNameMatch) {
       sections.meetingName = meetingNameMatch[1].trim();
     }
 
-    // Extract number of people
-    const numberOfPeopleMatch = fullText.match(/### Number of People:(.*?)(?=###|$)/s);
+    // Extract Number of People
+    const numberOfPeopleMatch = fullText.match(/### 👥 Number of People:(.*?)(?=###|$)/s);
     if (numberOfPeopleMatch) {
       sections.numberOfPeople = numberOfPeopleMatch[1].trim();
     }
 
-    // Extract short summary
-    const shortSummaryMatch = fullText.match(/### Short Summary:(.*?)(?=###|$)/s);
+    // Extract Short Summary
+    const shortSummaryMatch = fullText.match(/### 🧾 Short Summary:(.*?)(?=###|$)/s);
     if (shortSummaryMatch) {
       sections.shortSummary = shortSummaryMatch[1].trim();
     }
+
+    // Log the parsed sections
+    logger.info("Parsed sections:", {
+      sections: sections,
+    });
 
     logger.info("Successfully processed Gemini response and split sections");
 
@@ -295,10 +351,7 @@ exports.runpodWebhook = onRequest({
       return `[${formatTime(start)} - ${formatTime(end)}] ${speaker}:\n${text}\n`;
     }).join("\n");
 
-    // Process with Gemini
-    const geminiResults = await processWithGemini(formattedTranscript);
-
-    // Update the same document with results
+    // Get the document first to access the context
     const querySnapshot = await processingCollection
         .where("runpodJobId", "==", webhookData.id)
         .limit(1)
@@ -306,6 +359,15 @@ exports.runpodWebhook = onRequest({
 
     if (!querySnapshot.empty) {
       const doc = querySnapshot.docs[0];
+      const docData = doc.data();
+
+      // Process with Gemini, passing both transcript and context
+      const geminiResults = await processWithGemini(
+          formattedTranscript,
+          docData.context || "",
+      );
+
+      // Update the document with results
       await doc.ref.update({
         status: webhookData.status,
         formattedTranscript: formattedTranscript,
