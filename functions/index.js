@@ -123,7 +123,7 @@ const processWithGemini = async (transcript, context = "") => {
 
       Please perform the following tasks in order Use strict formatting as specified:
 
----
+
 
 ### 📌 Meeting Summary:
 • Provide a clear, structured, professional summary.
@@ -132,39 +132,57 @@ const processWithGemini = async (transcript, context = "") => {
 • Maintain a neutral, business-oriented tone. Do NOT hallucinate or assume.
 • Keep it concise but comprehensive.
 • Please do not hallucinate or assume any points. 
----
+
 
 ### ✅ Action Items:
 • Format as bullet points.
-• Use this structure: Name (if known): Action Item 🔧📅📝 (use relevant emoji)
-• If assigned to a group, label as "Team Task".
-• If name not known, use "Unknown".
-• Example:
-  - John: Schedule follow-up meeting with client 📅
-  - Team Task: Review current sprint backlog 🧾
-• Please do not hallucinate or assume any action item or assigned person name. 
-• Give as much as accurate action items as possible.
----
+ Extract only actionable statements from the transcript.
+• Format clearly like this:
+Name (if known): Action Description 🔧📅📝
+    • If assigned to multiple people, list names.
+    • If not clear, use "Unknown".
+    • If it's a group task, write "Team Task".
+
+• Action items MUST include:
+    • Clear responsibility (who is doing what)
+    • Verbs that show action (e.g., "schedule", "prepare", "send", "review")
+    • Relevant emojis to indicate type:
+    📅 (calendar/schedule),
+    📝 (documentation),
+    📧 (email),
+    💻 (technical),
+    📊 (reporting), etc.
+
+Example Output:
+    • Sarah: Prepare demo slides for Monday's client review 📝
+    • Unknown: Follow up with the marketing team about campaign launch 📧
+    • Team Task: Conduct usability testing before the end of the week 🧪
+
 
 ### 🏷️ Meeting Name:
 • Generate a short, clear title summarizing the theme of the meeting.
 • Add a relevant emoji.
+• Make sure emoji is in the beginning of the title.
+• Example: "### 🏷️ Meeting Name: • Data Integration Requirements for Nordstrom 🤝" This is wrong
+• Example: "### 🏷️ Meeting Name: 🤝 Data Integration Requirements for Nordstrom" This is correct
 • Example: "🔄 Quarterly Planning Sync"
 
----
+
 
 ### 👥 Number of People:
 • Count number of unique speakers in the transcript (e.g., Speaker_00, Speaker_01, ...).
+• Count will be highest number of speaker in the transcript + 1
+• For example if there is SPEAKER_05, the count will be 6
 • Format like this: "5"
 
----
+
 
 ### 🧾 Short Summary:
 • Provide a **one-line summary** of the meeting.
 • Be concise, direct, and meaningful.
 • Example: "Team reviewed progress on the product launch and aligned on next sprint goals."
 
----
+
 
 Only include exactly what is asked in the structure above. Do NOT add extra commentary, headers, or notes.`; // rest of your prompt
 
