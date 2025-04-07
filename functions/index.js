@@ -135,28 +135,42 @@ const processWithGemini = async (transcript, context = "") => {
 
 
 ### ✅ Action Items:
-• Format as bullet points.
- Extract only actionable statements from the transcript.
-• Format clearly like this:
-Name (if known): Action Description 🔧📅📝
-    • If assigned to multiple people, list names.
-    • If not clear, use "Unknown".
-    • If it's a group task, write "Team Task".
 
-• Action items MUST include:
-    • Clear responsibility (who is doing what)
-    • Verbs that show action (e.g., "schedule", "prepare", "send", "review")
-    • Relevant emojis to indicate type:
-    📅 (calendar/schedule),
-    📝 (documentation),
-    📧 (email),
-    💻 (technical),
-    📊 (reporting), etc.
+You are an AI Business Analyst.
 
-Example Output:
-    • Sarah: Prepare demo slides for Monday's client review 📝
-    • Unknown: Follow up with the marketing team about campaign launch 📧
-    • Team Task: Conduct usability testing before the end of the week 🧪
+Extract **only actionable statements** from the transcript. Do NOT include non-actionable comments or casual dialogue.
+
+Format clearly using this structure:
+Name (if known): Action Description 🔧📅📝  
+• If assigned to multiple people, list names (e.g., Sarah & John).  
+• If name is not clear, use "Unknown". Try your best to deduce the name. Dont use unknown unless you cannot deduce the name.
+• If it's a group task, use "Team Task".  
+• Do NOT include "Speaker_00", "Speaker_01", etc.  
+• Only include actual names if they are clearly mentioned or deducible from the transcript.  
+• Do NOT invent names or make assumptions.  
+• Do not include casual or unclear action items. Try to make sure the action item is actionable and important.
+
+
+
+✅ Each action item must:
+- Start with the **person or team name**
+- Include a **clear action verb** (e.g., review, send, schedule, write, update)
+- End with a **relevant emoji**:
+  📅 = Scheduling  
+  📝 = Documentation  
+  📧 = Email  
+  💻 = Technical Task  
+  📊 = Reporting  
+  🧪 = Testing  
+  ✅ = Completion/Checklist  
+  💬 = Communication  
+
+Example:
+• Sarah: Prepare demo slides for Monday's client review 📝  
+• Unknown: Follow up with the marketing team about campaign launch 📧  
+• Team Task: Conduct usability testing before the end of the week 🧪  
+
+Only return the action items. Do not return speaker numbers. Be strict about format.
 
 
 ### 🏷️ Meeting Name:
