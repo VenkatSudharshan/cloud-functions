@@ -695,6 +695,18 @@ const processLectureWithGemini = async (transcript, context = "") => {
       shortSummary: "",
     };
 
+    // Format MCQs to ensure correct format
+    const formatMCQ = (mcqText) => {
+      const questions = mcqText.split(/\n(?=\*\*Question:)/);
+      return questions.map((q) => {
+        // Ensure options are on separate lines
+        q = q.replace(/([a-c]\))/g, "\n$1");
+        // Ensure correct answer is on a new line
+        q = q.replace(/(✅ Correct answer:)/g, "\n$1");
+        return q.trim();
+      }).join("\n\n");
+    };
+
     // Extract each section using the markers
     const topicsMatch = fullText.match(/### 1️⃣ Topics Covered(.*?)(?=###|$)/s);
     if (topicsMatch) {
@@ -713,17 +725,36 @@ const processLectureWithGemini = async (transcript, context = "") => {
 
     const mcqMatch = fullText.match(/### 4️⃣ MCQs.*?(.*?)(?=###|$)/s);
     if (mcqMatch) {
-      sections.mcq = mcqMatch[1].trim();
+      // Format the MCQ text using the formatMCQ function
+      sections.mcq = formatMCQ(mcqMatch[1].trim());
     }
 
-    const titleMatch = fullText.match(/### 🏷️ Lecture Title(.*?)(?=###|$)/s);
+    // Extract Lecture Title
+    const titleMatch = fullText.match(/### 🏷️(?: 📝)? Lecture Title:?\s*([^\n]+)/s);
     if (titleMatch) {
-      sections.lectureTitle = titleMatch[1].trim();
+      // Remove bullet point if present and trim
+      sections.lectureTitle = titleMatch[1].trim().replace(/^[•\s]+/, "");
+      logger.info("Extracted lecture title:", {
+        rawTitle: titleMatch[1],
+        processedTitle: sections.lectureTitle,
+      });
+    } else {
+      // Try alternative pattern if first one fails
+      const altTitleMatch = fullText.match(/### 🏷️(?: 📝)? ([^\n]+)/s);
+      if (altTitleMatch) {
+        sections.lectureTitle = altTitleMatch[1].trim().replace(/^[•\s]+/, "");
+        logger.info("Extracted lecture title using alternative pattern:", {
+          rawTitle: altTitleMatch[1],
+          processedTitle: sections.lectureTitle,
+        });
+      }
     }
 
-    const summaryMatch = fullText.match(/### 🧾 Short Summary(.*?)(?=###|$)/s);
+    // Extract Short Summary
+    const summaryMatch = fullText.match(/### 🧾 Short Summary:?\s*([^\n]+)/s);
     if (summaryMatch) {
-      sections.shortSummary = summaryMatch[1].trim();
+      // Remove bullet point if present and trim
+      sections.shortSummary = summaryMatch[1].trim().replace(/^[•\s]+/, "");
     }
 
     // Log the parsed sections
