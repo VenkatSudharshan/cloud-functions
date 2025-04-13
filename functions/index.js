@@ -337,7 +337,7 @@ Only include exactly what is asked in the structure above. Do NOT add extra comm
 // Update the webhook handler to handle both collections
 exports.runpodWebhook = onRequest({
   cors: true,
-  maxInstances: 10,
+  maxInstances: 100,
 }, async (req, res) => {
   const startTime = Date.now();
   logger.info("Webhook function started at:", new Date(startTime).toISOString());
