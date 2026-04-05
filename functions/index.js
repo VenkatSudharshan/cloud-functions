@@ -7,10 +7,10 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 // Initialize Firebase Admin
 admin.initializeApp();
 
-const RUNPOD_API_KEY = "rpa_WQ2BFZSBAL37B2X0PX2ICW5WXKBBTZF2OF01UGZD13g3et";
+const RUNPOD_API_KEY = "*****************";
 const RUNPOD_ENDPOINT = "https://api.runpod.ai/v2/hw5wd5r9tlke4r";
 
-const GEMINI_API_KEY = "AIzaSyBvxbWvHAqA67BI-aHWQwLLRtBstYP3Y34";
+const GEMINI_API_KEY = "******************";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 // Create a Firestore collection to store processing status
@@ -45,7 +45,7 @@ exports.onDocumentCreated = onDocumentCreated("audioProcessing/{docId}", async (
         batch_size: 32,
         diarization: true,
         align_output: true,
-        huggingface_access_token: "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",
+        huggingface_access_token: "*************",
       },
       webhook: "https://us-central1-test-58b15.cloudfunctions.net/runpodWebhook",
       webhook_events: ["completed", "failed"],
